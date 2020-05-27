@@ -1,0 +1,256 @@
+---
+title: "Outtake Graphs"
+output: html_notebook
+---
+
+```{r}
+ggplot(data = turnstile_summaries %>% filter(hour(datetime) == 4)) + 
+  geom_line(mapping = aes(x = datetime, y = entry_sum),
+                                               color = "sky blue") +
+  geom_point(mapping = aes(x = datetime, y = entry_sum),
+                                               color = "sky blue") +
+  geom_line(mapping = aes(x = datetime, y = exit_sum), color = "pink") +
+  geom_point(mapping = aes(x = datetime, y = exit_sum), color = "pink") +
+  geom_line(mapping = aes(x = datetime, y = entry_sum),
+            data = turnstile_summaries %>% filter(hour(datetime) == 8),
+                                               color = "blue") +
+  geom_point(mapping = aes(x = datetime, y = entry_sum),
+             data = turnstile_summaries %>% filter(hour(datetime) == 8),
+                                               color = "blue") +
+  geom_line(mapping = aes(x = datetime, y = exit_sum), 
+            data = turnstile_summaries %>% filter(hour(datetime) == 8),
+            color = "red") +
+  geom_point(mapping = aes(x = datetime, y = exit_sum), 
+             data = turnstile_summaries %>% filter(hour(datetime) == 8),
+             color = "red") + 
+  geom_hline(mapping = aes(yintercept =
+                             mean((turnstile_summaries %>% filter(month(datetime) == 2, !is.na(entry_sum)))$entry_sum)
+                             ), color = " navy blue") +
+  geom_hline(mapping = aes(yintercept =
+                             mean((turnstile_summaries %>% filter(month(datetime) == 2, !is.na(entry_sum)))$exit_sum)
+                             ), color = " dark red")
+```
+
+```{r}
+ggplot(data = turnstile_summaries %>% filter(hour(datetime) == 4)) + 
+  geom_line(mapping = aes(x = datetime, y = entry_sum),
+                                               color = "yellow green") +
+  geom_point(mapping = aes(x = datetime, y = entry_sum),
+                                               color = "yellow green") +
+  geom_line(mapping = aes(x = datetime, y = entry_sum),
+            data = turnstile_summaries %>% filter(hour(datetime) == 8),
+                                               color = "dark green") +
+  geom_point(mapping = aes(x = datetime, y = entry_sum),
+             data = turnstile_summaries %>% filter(hour(datetime) == 8),
+                                               color = "dark green") +
+  geom_line(mapping = aes(x = datetime, y = entry_sum),
+            data = turnstile_summaries %>% filter(hour(datetime) == 12),
+                                               color = "aquamarine") +
+  geom_point(mapping = aes(x = datetime, y = entry_sum),
+             data = turnstile_summaries %>% filter(hour(datetime) == 12),
+                                               color = "aquamarine") +
+  geom_line(mapping = aes(x = datetime, y = entry_sum),
+            data = turnstile_summaries %>% filter(hour(datetime) == 16),
+                                               color = "blue") +
+  geom_point(mapping = aes(x = datetime, y = entry_sum),
+             data = turnstile_summaries %>% filter(hour(datetime) == 16),
+                                               color = "blue") +
+    geom_line(mapping = aes(x = datetime, y = entry_sum),
+            data = turnstile_summaries %>% filter(hour(datetime) == 20),
+                                               color = "purple") +
+  geom_point(mapping = aes(x = datetime, y = entry_sum),
+             data = turnstile_summaries %>% filter(hour(datetime) == 20),
+                                               color = "purple") +
+    geom_line(mapping = aes(x = datetime, y = entry_sum),
+            data = turnstile_summaries %>% filter(hour(datetime) == 0),
+                                               color = "black") +
+  geom_point(mapping = aes(x = datetime, y = entry_sum),
+             data = turnstile_summaries %>% filter(hour(datetime) == 0),
+                                               color = "black") +
+  geom_hline(mapping = aes(yintercept =
+                             mean((turnstile_summaries %>% filter(month(datetime) == 2, !is.na(entry_sum)))$entry_sum)
+                             ), color = " navy blue")
+
+ggplot(data = turnstile_summaries) + 
+  geom_line(mapping = aes(x = datetime, y = entry_sum),
+                                               color = "blue") +
+  geom_point(mapping = aes(x = datetime, y = entry_sum),
+                                               color = "blue") +
+  geom_line(mapping = aes(x = datetime, y = exit_sum), color = "red") +
+  geom_point(mapping = aes(x = datetime, y = exit_sum), color = "red")
+```
+
+
+```{r}
+get_hourly_summaries <- 
+  function(filtermonth, filterhour, summaryobject) {
+    time_filtered_summaryobject <- summaryobject %>% filter(
+        hour(datetime) == filterhour,
+        month(datetime) == filtermonth)
+    weekday_hourly_entry_avg <-
+      (time_filtered_summaryobject %>% filter(
+        !(wday(datetime, label = TRUE) %in% c("Sat", "Sun"))
+      ))$entry_sum %>% mean(na.rm = TRUE)
+    weekend_hourly_entry_avg <-
+      (time_filtered_summaryobject %>% filter(
+        (wday(datetime, label = TRUE) %in% c("Sat", "Sun"))
+      ))$entry_sum %>% mean(na.rm = TRUE)
+    weekend_hourly_exit_avg <-
+      (time_filtered_summaryobject %>% filter(
+        (wday(datetime, label = TRUE) %in% c("Sat", "Sun"))
+      ))$exit_sum %>% mean(na.rm = TRUE)
+    weekday_hourly_exit_avg <-
+      (time_filtered_summaryobject %>% filter(
+        !(wday(datetime, label = TRUE) %in% c("Sat", "Sun"))
+      ))$exit_sum %>% mean(na.rm = TRUE)
+    entry_avgs <- c(weekday_hourly_entry_avg, weekend_hourly_entry_avg)
+    exit_avgs <- c(weekday_hourly_exit_avg, weekend_hourly_exit_avg)
+    toReturn = tibble(
+      c("Weekday", "Weekend"),
+      c(month.abb[filtermonth], month.abb[filtermonth]),
+      c(filterhour, filterhour),
+      entry_avgs,
+      exit_avgs
+    ) %>% rename(DayType = 1, Month = 2, Hour = 3, EntryAvgs = 4, ExitAvgs = 5)
+  }
+
+get_overall_monthly_summaries <- 
+  function(filtermonth, summaryobject) {
+    time_filtered_summaryobject <- summaryobject %>% filter(
+        month(datetime) == filtermonth)
+    weekday_hourly_entry_avg <-
+      (time_filtered_summaryobject %>% filter(
+        !(wday(datetime, label = TRUE) %in% c("Sat", "Sun"))
+      ))$entry_sum %>% mean(na.rm = TRUE)
+    weekend_hourly_entry_avg <-
+      (time_filtered_summaryobject %>% filter(
+        (wday(datetime, label = TRUE) %in% c("Sat", "Sun"))
+      ))$entry_sum %>% mean(na.rm = TRUE)
+    weekend_hourly_exit_avg <-
+      (time_filtered_summaryobject %>% filter(
+        (wday(datetime, label = TRUE) %in% c("Sat", "Sun"))
+      ))$exit_sum %>% mean(na.rm = TRUE)
+    weekday_hourly_exit_avg <-
+      (time_filtered_summaryobject %>% filter(
+        !(wday(datetime, label = TRUE) %in% c("Sat", "Sun"))
+      ))$exit_sum %>% mean(na.rm = TRUE)
+    entry_avgs <- c(weekday_hourly_entry_avg, weekend_hourly_entry_avg)
+    exit_avgs <- c(weekday_hourly_exit_avg, weekend_hourly_exit_avg)
+    toReturn = tibble(
+      c("Weekday", "Weekend"),
+      c(month.abb[filtermonth], month.abb[filtermonth]),
+      c(NA, NA),
+      entry_avgs,
+      exit_avgs
+    ) %>% rename(DayType = 1, Month = 2, Hour = 3, EntryAvgs = 4, ExitAvgs = 5)
+  }
+
+get_ratio_to_average <- function(summaryobject) {
+  months <- c(2,3,4,5)
+  hours <- c(0,4,8,12,16,20)
+  toReturn <- NULL
+  for (currmonth in months) {
+    overall_summary <- get_overall_monthly_summaries(currmonth, turnstile_summaries)
+    for (currhour in hours) {
+      hourly_summary <- get_hourly_summaries(currmonth, currhour, turnstile_summaries)
+      entry_ratio = hourly_summary$EntryAvgs / overall_summary$EntryAvgs
+      exit_ratio = hourly_summary$ExitAvgs / overall_summary$ExitAvgs
+      hourly_summary <- hourly_summary %>% 
+        mutate(EntryRatioToEntireDayAvg = entry_ratio,
+               ExitRatioToEntireDayAvg = exit_ratio)
+      toReturn <- bind_rows(toReturn, hourly_summary)
+    }
+  }
+  febonly <-
+    toReturn %>% filter(Month == "Feb") %>%
+    select(
+      DayType,
+      Hour,
+      FebEntryAvgs = EntryAvgs,
+      FebExitAvgs = ExitAvgs,
+      FebEntryRatioToEntireDayAvg = EntryRatioToEntireDayAvg,
+      FebExitRatioToEntireDayAvg = ExitRatioToEntireDayAvg
+    )
+  toReturnCorrespondingFeb <- toReturn %>% inner_join(febonly) %>% 
+    mutate(FebEntryAvgsDiff = EntryAvgs - FebEntryAvgs,
+           FebEntryAvgsDiffPerc = 100 * FebEntryAvgsDiff / FebEntryAvgs,
+           FebExitAvgsDiff = ExitAvgs - FebExitAvgs,
+           FebExitAvgsDiffPerc = 100 * FebExitAvgsDiff / FebExitAvgs,
+           FebEntryRatioDiff = FebEntryRatioToEntireDayAvg - EntryRatioToEntireDayAvg,
+           FebExitRatioDiff = FebExitRatioToEntireDayAvg - ExitRatioToEntireDayAvg)
+  return(toReturnCorrespondingFeb)
+}
+
+turnstile_ratios <- get_ratio_to_average(turnstile_summaries)
+```
+
+```{r}
+ggplot(data = turnstile_ratios) +
+  geom_point(aes(
+    x = match(Month, month.abb),
+    y = EntryRatioToEntireDayAvg,
+    color = as.factor(Hour)
+  )) +
+  geom_line(aes(
+    x = match(Month, month.abb),
+    y = EntryRatioToEntireDayAvg,
+    color = as.factor(Hour),
+    group = as.factor(Hour)
+  )) +
+  facet_wrap(vars(DayType)) +
+  labs(title = "Ratio of Average Boardings for a Particular Time Period to Daily Average",
+       x = "Month",
+       y = "Ratio",
+       color = "Hour of Day")
+```
+
+```{r}
+ggplot(data = turnstile_ratios) +
+  geom_point(aes(
+    x = match(Month, month.abb),
+    y = EntryRatioToEntireDayAvg,
+    color = as.factor(Hour)
+  )) +
+  geom_line(aes(
+    x = match(Month, month.abb),
+    y = EntryRatioToEntireDayAvg,
+    color = as.factor(Hour),
+    group = as.factor(Hour)
+  )) +
+  facet_wrap(vars(DayType)) +
+  labs(title = "Ratio of Average Boardings for a Particular Time Period to Daily Average",
+       x = "Month",
+       y = "Ratio",
+       color = "Hour of Day")
+```
+
+```{r}
+ggplot(data = combined_table) +
+  geom_point(aes(y = net_entries, x = MedianIncome))
+```
+
+```{r}
+ggplot(data = zipcode_data_transformed) +
+  geom_sf(aes(fill = MedianIncome, geometry = geometry),
+          size = 0.25,
+          colour = "gray") +
+  scale_fill_gradient(
+    low = "sky blue",
+    high = "dark blue",
+    limits = c(0, 100000),
+    oob = scales::squish
+  ) +
+  geom_sf(data = turnstile_data_sf_together_transformed, mapping = aes(size = net_entries, color = net_entries), shape = 16) +
+  scale_color_gradient(
+    low = "white",
+    high = "dark red",
+    limits = c(0, 3000000),
+    oob = scales::squish
+  )
+```
+
+```{r}
+
+```
+
+

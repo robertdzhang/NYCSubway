@@ -1,0 +1,418 @@
+---
+title: "Turnstiles"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Importing Packages
+
+```{r packages}
+library(tidyverse)
+library(tidycensus)
+library(sf)
+library(lubridate)
+library(gganimate)
+```
+
+## Importing Data
+https://medium.com/qri-io/taming-the-mtas-unruly-turnstile-data-c945f5f96ba0 was an important resource for this section.
+
+http://web.mta.info/developers/developer-data-terms.html#data provided much of the data.
+
+```{r message=FALSE, warning=FALSE}
+turnstile_data <- read_delim("turnstile_200201.txt", ",") 
+start <- as.Date("02-08-20",format="%m-%d-%y")
+end   <- as.Date("05-23-20",format="%m-%d-%y")
+theDate <- start
+while (theDate <= end) {
+  temp =read_delim(paste0("turnstile_", format(theDate,"%y%m%d"), ".txt"), ",")
+  turnstile_data <- turnstile_data %>% bind_rows(temp)
+  print(theDate)
+  theDate <- theDate + 7                   
+}
+
+turnstile_data <- turnstile_data %>%
+  mutate(DATE = mdy(DATE),
+         ENTRIES = as.numeric(ENTRIES)) %>% rename(EXITS = `EXITS                                                               `) %>% mutate(EXITS = as.numeric(EXITS)) %>%
+  mutate(DATETIME = ymd_hms(paste(DATE, TIME)))
+turnstile_data <- turnstile_data %>%
+  mutate(id = paste(`C/A`, UNIT, SCP, DATE, TIME)) %>%
+  mutate(unit_id = paste(`C/A`, UNIT, SCP)) %>%
+  arrange(id)
+```
+
+```{r}
+load("turnstile_data")
+```
+
+
+```{r}
+turnstile_data <- turnstile_data %>%
+  group_by(unit_id) %>%
+  mutate(net_entries = abs(lead(ENTRIES, 1) - ENTRIES),
+         net_exits = abs(lead(EXITS, 1) - EXITS)) %>%
+  mutate(net_entries = replace(net_entries, net_entries > 10000, 0)) %>% 
+  mutate(net_exits = replace(net_exits, net_exits > 10000, 0)) %>% 
+  ungroup()
+```
+
+
+Credits to Chris Whong for compiling the remote_complex_lookup data table.
+```{r}
+station_booths <- readxl::read_excel("Remote-Booth-Station.xls")
+remote_complex_lookup <- read_csv("remote_complex_lookup.csv")
+turnstile_data_joined <- turnstile_data %>% left_join(remote_complex_lookup,
+                                                       by = c("UNIT" = "remote",
+                                                              "C/A" = "booth"))
+stations <- read_csv("Stations.csv")
+turnstile_data_joined_stations <-
+  turnstile_data_joined %>%
+  left_join(
+    stations %>%
+      group_by(`Complex ID`) %>%
+      filter(row_number() == 1) %>%
+      ungroup(),
+    by = c("complex_id" = "Complex ID")
+  ) %>%
+  filter(DIVISION != "PTH", DIVISION != "RIT")
+
+turnstile_summaries <-
+  turnstile_data_joined_stations %>%
+  group_by(round_date(DATETIME, "4 hours")) %>%
+  filter(n() > 5) %>% summarize(entry_sum = sum(net_entries, na.rm = TRUE),
+                                exit_sum = sum(net_exits, na.rm = TRUE)) %>% 
+  rename(datetime = 1)
+```
+
+
+
+```{r}
+ggplot(
+  data = turnstile_summaries %>% group_by(the_date = date(datetime)) %>% summarize(
+    entry_sum = sum(entry_sum),
+    exit_sum = sum(exit_sum)
+  ) %>% pivot_longer(ends_with("_sum"), names_to = 'sumtype', values_to = 'the_sum')
+) +
+  geom_line(mapping = aes(
+    x = the_date,
+    y = the_sum,
+    group = sumtype,
+    color = sumtype
+  )) +
+  geom_point(mapping = aes(
+    x = the_date,
+    y = the_sum,
+    group = sumtype,
+    color = sumtype
+  )) +
+  labs(
+    title = "Total Daily Turnstile Entries and Exits",
+    x = "Date",
+    y = "Total Daily Count",
+    color = "Legend",
+    subtitle = paste(
+      "Orange Vertical Line is when State of Emergency Declared in NYC (March 12)",
+      "Red Vertical Line is when Statewide Stay-At-Home Order was Enacted (March 22)",
+      sep = "\n"
+    )
+  ) +
+  scale_color_manual(values = c("#7cae00", "#00bfc4"), labels = c("Entries", "Exits")) +
+  theme(legend.position = "right") +
+  scale_y_continuous(labels = scales::comma) +
+  geom_vline(
+    mapping = aes(xintercept = mdy("03-12-2020")),
+    color = "dark orange",
+    linetype = "dashed"
+  ) +
+  geom_vline(
+    mapping = aes(xintercept = mdy("03-22-2020")),
+    color = "red",
+    linetype = "dashed"
+  )
+```
+
+
+```{r}
+entries_transition <- ggplot(data = turnstile_summaries) + 
+  geom_line(mapping = aes(x = datetime, y = entry_sum)) +
+  geom_point(mapping = aes(x = datetime, y = entry_sum)) +
+  transition_states(
+    hour(datetime),
+    transition_length = 0,
+    state_length = 1
+  ) +
+  labs(title = 'Total Entries into Subway System by Time of Day', subtitle = 'Hour of Day: {closest_state}', x = 'Date', y = 'Total System Entries')
+
+exits_transition <- ggplot(data = turnstile_summaries) + 
+  geom_line(mapping = aes(x = datetime, y = exit_sum)) +
+  geom_point(mapping = aes(x = datetime, y = exit_sum)) +
+  transition_states(
+    hour(datetime),
+    transition_length = 0,
+    state_length = 1
+  ) +
+  labs(title = 'Total Exits from Subway System by Time of Day', subtitle = 'Hour of Day: {closest_state}', x = 'Date', y = 'Total System Exits')
+```
+
+```{r}
+animate(entries_transition, height = 5, width = 5, units = "in", res = 150)
+anim_save("entries_transition.gif")
+animate(exits_transition, height = 5, width = 5, units = "in", res = 150)
+anim_save("exits_transition.gif")
+```
+
+```{r message=FALSE, warning=FALSE}
+ggplot(data = turnstile_summaries %>%
+         pivot_longer(ends_with("_sum"), names_to = 'sumtype', values_to = 'the_sum')) +
+  geom_line(mapping = aes(
+    x = datetime,
+    y = the_sum,
+    group = sumtype,
+    color = sumtype
+  )) +
+  geom_point(mapping = aes(
+    x = datetime,
+    y = the_sum,
+    group = sumtype,
+    color = sumtype
+  )) +
+  scale_y_continuous(labels = scales::comma) +
+facet_wrap(vars(hour(datetime))) +
+  labs(
+    title = 'Total Turnstile Entries and Exits by Time of Day',
+    x = 'Date',
+    y = 'Total System Entries',
+    color = "Legend",
+    subtitle = paste(
+      "Orange Vertical Line is when State of Emergency Declared in NYC (March 12)",
+      "Red Vertical Line is when Statewide Stay-At-Home Order was Enacted (March 22)",
+      sep = "\n"
+    )
+  ) +
+  scale_color_manual(values = c("#7cae00", "#00bfc4"),
+                     labels = c("Entries", "Exits")) +
+  theme(legend.position = "right") +
+  geom_vline(
+    mapping = aes(xintercept = mdy("03-12-2020") %>% as_datetime()),
+    color = "dark orange",
+    linetype = "dashed"
+  ) +
+  geom_vline(
+    mapping = aes(xintercept = mdy("03-22-2020") %>% as_datetime()),
+    color = "red",
+    linetype = "dashed"
+  )
+```
+
+
+```{r}
+get_hourly_summaries <- 
+  function(filtermonth, filterhour, summaryobject) {
+    time_filtered_summaryobject <- summaryobject %>% filter(
+        hour(datetime) == filterhour,
+        month(datetime) == filtermonth)
+    weekday_hourly_entry_avg <-
+      (time_filtered_summaryobject %>% filter(
+        !(wday(datetime, label = TRUE) %in% c("Sat", "Sun"))
+      ))$entry_sum %>% mean(na.rm = TRUE)
+    weekend_hourly_entry_avg <-
+      (time_filtered_summaryobject %>% filter(
+        (wday(datetime, label = TRUE) %in% c("Sat", "Sun"))
+      ))$entry_sum %>% mean(na.rm = TRUE)
+    weekend_hourly_exit_avg <-
+      (time_filtered_summaryobject %>% filter(
+        (wday(datetime, label = TRUE) %in% c("Sat", "Sun"))
+      ))$exit_sum %>% mean(na.rm = TRUE)
+    weekday_hourly_exit_avg <-
+      (time_filtered_summaryobject %>% filter(
+        !(wday(datetime, label = TRUE) %in% c("Sat", "Sun"))
+      ))$exit_sum %>% mean(na.rm = TRUE)
+    entry_avgs <- c(weekday_hourly_entry_avg, weekend_hourly_entry_avg)
+    exit_avgs <- c(weekday_hourly_exit_avg, weekend_hourly_exit_avg)
+    toReturn = tibble(
+      c("Weekday", "Weekend"),
+      c(month.abb[filtermonth], month.abb[filtermonth]),
+      c(filterhour, filterhour),
+      entry_avgs,
+      exit_avgs
+    ) %>% rename(DayType = 1, Month = 2, Hour = 3, EntryAvgs = 4, ExitAvgs = 5)
+  }
+
+get_overall_monthly_summaries <- 
+  function(filtermonth, summaryobject) {
+    time_filtered_summaryobject <- summaryobject %>% filter(
+        month(datetime) == filtermonth)
+    weekday_hourly_entry_avg <-
+      (time_filtered_summaryobject %>% filter(
+        !(wday(datetime, label = TRUE) %in% c("Sat", "Sun"))
+      ))$entry_sum %>% mean(na.rm = TRUE)
+    weekend_hourly_entry_avg <-
+      (time_filtered_summaryobject %>% filter(
+        (wday(datetime, label = TRUE) %in% c("Sat", "Sun"))
+      ))$entry_sum %>% mean(na.rm = TRUE)
+    weekend_hourly_exit_avg <-
+      (time_filtered_summaryobject %>% filter(
+        (wday(datetime, label = TRUE) %in% c("Sat", "Sun"))
+      ))$exit_sum %>% mean(na.rm = TRUE)
+    weekday_hourly_exit_avg <-
+      (time_filtered_summaryobject %>% filter(
+        !(wday(datetime, label = TRUE) %in% c("Sat", "Sun"))
+      ))$exit_sum %>% mean(na.rm = TRUE)
+    entry_avgs <- c(weekday_hourly_entry_avg, weekend_hourly_entry_avg)
+    exit_avgs <- c(weekday_hourly_exit_avg, weekend_hourly_exit_avg)
+    toReturn = tibble(
+      c("Weekday", "Weekend"),
+      c(month.abb[filtermonth], month.abb[filtermonth]),
+      c(NA, NA),
+      entry_avgs,
+      exit_avgs
+    ) %>% rename(DayType = 1, Month = 2, Hour = 3, EntryAvgs = 4, ExitAvgs = 5)
+  }
+
+get_ratio_to_average <- function(summaryobject) {
+  months <- c(2,3,4,5)
+  hours <- c(0,4,8,12,16,20)
+  toReturn <- NULL
+  for (currmonth in months) {
+    overall_summary <- get_overall_monthly_summaries(currmonth, turnstile_summaries)
+    for (currhour in hours) {
+      hourly_summary <- get_hourly_summaries(currmonth, currhour, turnstile_summaries)
+      entry_ratio = hourly_summary$EntryAvgs / overall_summary$EntryAvgs
+      exit_ratio = hourly_summary$ExitAvgs / overall_summary$ExitAvgs
+      hourly_summary <- hourly_summary %>% 
+        mutate(EntryRatioToEntireDayAvg = entry_ratio,
+               ExitRatioToEntireDayAvg = exit_ratio)
+      toReturn <- bind_rows(toReturn, hourly_summary)
+    }
+  }
+  febonly <-
+    toReturn %>% filter(Month == "Feb") %>%
+    select(
+      DayType,
+      Hour,
+      FebEntryAvgs = EntryAvgs,
+      FebExitAvgs = ExitAvgs,
+      FebEntryRatioToEntireDayAvg = EntryRatioToEntireDayAvg,
+      FebExitRatioToEntireDayAvg = ExitRatioToEntireDayAvg
+    )
+  toReturnCorrespondingFeb <- toReturn %>% inner_join(febonly) %>% 
+    mutate(FebEntryAvgsDiff = EntryAvgs - FebEntryAvgs,
+           FebEntryAvgsDiffPerc = 100 * FebEntryAvgsDiff / FebEntryAvgs,
+           FebExitAvgsDiff = ExitAvgs - FebExitAvgs,
+           FebExitAvgsDiffPerc = 100 * FebExitAvgsDiff / FebExitAvgs,
+           FebEntryRatioDiff = FebEntryRatioToEntireDayAvg - EntryRatioToEntireDayAvg,
+           FebExitRatioDiff = FebExitRatioToEntireDayAvg - ExitRatioToEntireDayAvg)
+  return(toReturnCorrespondingFeb)
+}
+
+turnstile_ratios <- get_ratio_to_average(turnstile_summaries)
+```
+EntryRatioToEntireDayAvg gives the ratio between average weekday/weekend entries for that hour and the total average weekday/weekend entries
+
+## Incorporating Census Data
+```{r}
+# curr_vars <- load_variables(2018, "acs5")
+bronxzip <- as.character(c(10453, 10457, 10460, 10458, 10467, 10468, 10451, 10452, 10456, 10454, 10455, 10459, 10474, 10463, 10471, 10466, 10469, 10470, 10475, 10461, 10462, 10464, 10465, 10472, 10473))
+brooklynzip <- as.character(c(11212, 11213, 11216, 11233, 11238, 11209, 11214, 11228, 11204, 11218, 11219, 11230, 11234, 11236, 11239, 11223, 11224, 11229, 11235, 11201, 11205, 11215, 11217, 11231, 11203, 11210, 11225, 11226, 11207, 11208, 11211, 11222, 11220, 11232, 11206, 11221, 11237))
+manhattanzip <- as.character(c(10026, 10027, 10030, 10037, 10039, 10001, 10011, 10018, 10019, 10020, 10036, 10029, 10035, 10010, 10016, 10017, 10022, 10012, 10013, 10014, 10004, 10005, 10006, 10007, 10038, 10280, 10002, 10003, 10009, 10021, 10028, 10044, 10065, 10075, 10128, 10023, 10024, 10025, 10031, 10032, 10033, 10034, 10040))
+queenszip <- as.character(c(11361, 11362, 11363, 11364, 11354, 11355, 11356, 11357, 11358, 11359, 11360, 11365, 11366, 11367, 11412, 11423, 11432, 11433, 11434, 11435, 11436, 11101, 11102, 11103, 11104, 11105, 11106, 11374, 11375, 11379, 11385, 11691, 11692, 11693, 11694, 11695, 11697, 11004, 11005, 11411, 11413, 11422, 11426, 11427, 11428, 11429, 11414, 11415, 11416, 11417, 11418, 11419, 11420, 11421, 11368, 11369, 11370, 11372, 11373, 11377, 11378))
+sizip <- as.character(c(10302, 10303, 10310, 10306, 10307, 10308, 10309, 10312, 10301, 10304, 10305, 10314))
+nyczip <- as.character(c(bronxzip, brooklynzip, manhattanzip, queenszip, sizip))
+
+zipcode_data <- get_acs(
+  geography = "zip code tabulation area",
+  variables = c(MedianIncome = "B19013_001",
+                TotalPopulation = "B01003_001",
+                TotalHousingUnits = "B25001_001",
+                TransitCommuteNum = "B08301_010",
+                AggregateTransportTime = "B08136_001"),
+  year = 2018
+) %>% filter(GEOID %in% nyczip) 
+
+zipcode_data_spread <- zipcode_data %>%
+  pivot_wider(
+    id_cols = c(GEOID, NAME),
+    names_from = variable,
+    values_from = c(estimate)
+  )
+
+zipcode_shapefiles <- get_acs(
+  geography = "zip code tabulation area",
+  variables = c(TotalPopulation = "B01003_001"),
+  geometry = TRUE,
+  keep_geo_vars = TRUE,
+  year = 2018
+) %>% filter(GEOID %in% nyczip) %>% select(-c(estimate, moe, variable))
+
+zipcode_data_joined <- zipcode_data_spread %>% inner_join(zipcode_shapefiles) 
+zipcode_data_transformed <- st_sf(zipcode_data_joined) %>%  
+  st_transform(2831)
+```
+
+```{r}
+turnstile_data_grouped <- turnstile_data_joined_stations %>% 
+  group_by(complex_id, station, line_name, DATETIME) %>%
+  summarize(latitude = mean(`GTFS Latitude`), 
+            longitude = mean(`GTFS Longitude`),
+            net_entries = sum(net_entries, na.rm = TRUE),
+            net_exits = sum(net_exits, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  filter(!is.na(latitude))
+
+turnstile_data_sf_together <-
+  turnstile_data_grouped %>% 
+  group_by(complex_id, station, line_name) %>% 
+  summarize(latitude = mean(`latitude`), 
+            longitude = mean(`longitude`),
+            net_entries = sum(net_entries, na.rm = TRUE),
+            net_exits = sum(net_exits), na.rm = TRUE) %>% 
+  filter(!is.na(latitude)) %>% 
+  st_as_sf(coords = c("longitude", "latitude"))
+st_crs(turnstile_data_sf_together) <- 4326
+turnstile_data_sf_together_transformed <-
+  turnstile_data_sf_together %>% st_transform(2831)
+
+
+ggplot(data = zipcode_data_transformed) +
+  geom_sf(aes(fill = MedianIncome, geometry = geometry),
+          size = 0.25,
+          colour = "gray") +
+  scale_fill_gradient(
+    low = "sky blue",
+    high = "dark blue",
+    limits = c(0, 100000),
+    oob = scales::squish
+  ) +
+  geom_sf(data = turnstile_data_sf_together_transformed, mapping = aes(size = net_entries, color = net_entries), shape = 16) +
+  scale_color_gradient(
+    low = "white",
+    high = "dark red",
+    limits = c(0, 3000000),
+    oob = scales::squish
+  )
+  
+```
+
+```{r}
+ggplot(data = turnstile_ratios) +
+  geom_point(aes(
+    x = match(Month, month.abb),
+    y = EntryRatioToEntireDayAvg,
+    color = as.factor(Hour)
+  )) +
+  geom_line(aes(
+    x = match(Month, month.abb),
+    y = EntryRatioToEntireDayAvg,
+    color = as.factor(Hour),
+    group = as.factor(Hour)
+  )) +
+  facet_wrap(vars(DayType)) +
+  labs(title = "Ratio of Average Boardings for a Particular Time Period to Daily Average",
+       x = "Month",
+       y = "Ratio",
+       color = "Hour of Day")
+```
+
