@@ -22,6 +22,8 @@ https://medium.com/qri-io/taming-the-mtas-unruly-turnstile-data-c945f5f96ba0 was
 
 http://web.mta.info/developers/developer-data-terms.html#data provided much of the data.
 
+#### Setting Up Data
+This script uses the files from turnstile_200201.txt all the way to turnstile_200523.txt from [http://web.mta.info/developers/turnstile.html](http://web.mta.info/developers/turnstile.html).
 ```{r message=FALSE, warning=FALSE}
 # turnstile_data <- read_delim("turnstile_200201.txt", ",") 
 # start <- as.Date("02-08-20",format="%m-%d-%y")
@@ -44,6 +46,7 @@ http://web.mta.info/developers/developer-data-terms.html#data provided much of t
 #   arrange(id)
 ```
 
+Loading data instead of processing it, so it's faster.
 ```{r}
 load("turnstile_data")
 ```
@@ -140,7 +143,7 @@ ggplot(
   )
 ```
 
-
+Animated between hours.
 ```{r}
 entries_transition <- ggplot(data = turnstile_summaries) + 
   geom_line(mapping = aes(x = datetime, y = entry_sum)) +
@@ -426,7 +429,7 @@ view(turnstile_month_percentages %>% filter(Period == 2))
 
 
 ## Incorporating Census Data
-```{r}
+```{r message=FALSE, warning=FALSE, results ='hide'}
 # curr_vars <- load_variables(2018, "acs5")
 bronxzip <- as.character(c(10453, 10457, 10460, 10458, 10467, 10468, 10451, 10452, 10456, 10454, 10455, 10459, 10474, 10463, 10471, 10466, 10469, 10470, 10475, 10461, 10462, 10464, 10465, 10472, 10473))
 brooklynzip <- as.character(c(11212, 11213, 11216, 11233, 11238, 11209, 11214, 11228, 11204, 11218, 11219, 11230, 11234, 11236, 11239, 11223, 11224, 11229, 11235, 11201, 11205, 11215, 11217, 11231, 11203, 11210, 11225, 11226, 11207, 11208, 11211, 11222, 11220, 11232, 11206, 11221, 11237))
@@ -832,7 +835,7 @@ ggplot(data = daily_combined_table_sf %>% filter(
        size = "Median Income")
 ```
 
-### Top 10% vs Bottom 10%
+### Top 20% vs Bottom 20%
 ```{r}
 turnstile_data_grouped_zip <-
   turnstile_data_grouped %>% inner_join(station_complex_to_zip)
