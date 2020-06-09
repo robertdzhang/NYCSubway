@@ -25,15 +25,15 @@ http://web.mta.info/developers/developer-data-terms.html#data provided much of t
 #### Setting Up Data
 This script uses the files from turnstile_200201.txt all the way to turnstile_200523.txt from [http://web.mta.info/developers/turnstile.html](http://web.mta.info/developers/turnstile.html).
 ```{r message=FALSE, warning=FALSE}
-# turnstile_data <- read_delim("turnstile_200201.txt", ",") 
-# start <- as.Date("02-08-20",format="%m-%d-%y")
-# end   <- as.Date("05-23-20",format="%m-%d-%y")
+# turnstile_data <- read_delim("turnstile_200201.txt", ",")
+# start <- as.Date("02-08-20", format = "%m-%d-%y")
+# end   <- as.Date("05-23-20", format = "%m-%d-%y")
 # theDate <- start
 # while (theDate <= end) {
-#   temp =read_delim(paste0("turnstile_", format(theDate,"%y%m%d"), ".txt"), ",")
+#   temp = read_delim(paste0("data/turnstile_", format(theDate, "%y%m%d"), ".txt"), ",")
 #   turnstile_data <- turnstile_data %>% bind_rows(temp)
 #   print(theDate)
-#   theDate <- theDate + 7                   
+#   theDate <- theDate + 7
 # }
 # 
 # turnstile_data <- turnstile_data %>%
